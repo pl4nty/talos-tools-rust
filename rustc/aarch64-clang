@@ -1,0 +1,8 @@
+#!/bin/sh
+# Cross C compiler wrapper: drive the multi-target clang (X86;AArch64) to emit
+# and link aarch64 against the aarch64 musl sysroot, using lld.
+exec clang \
+	--target=aarch64-unknown-linux-musl \
+	--sysroot=/sysroots/aarch64 \
+	-fuse-ld=lld \
+	"$@"

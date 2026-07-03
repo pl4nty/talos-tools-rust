@@ -1,0 +1,20 @@
+#!/bin/sh
+# aarch64 llvm-config shim.
+#
+# Cross-building the arm64-host rustc happens on amd64, but rust's build wants to
+# run the aarch64 target's llvm-config — an aarch64 binary that can't execute on
+# the amd64 worker. The tools arm64 LLVM is the same version and cmake config as
+# the amd64 one, so we run the native amd64 llvm-config instead and rewrite its
+# /usr install prefix to where the aarch64 LLVM is mounted, and report the
+# aarch64 host triple. This avoids executing any aarch64 binary.
+set -eu
+
+# --host-target must describe the aarch64 LLVM, not the amd64 one we shell out to.
+for arg in "$@"; do
+	if [ "$arg" = "--host-target" ]; then
+		echo "aarch64-unknown-linux-musl"
+		exit 0
+	fi
+done
+
+/usr/bin/llvm-config "$@" | sed 's#/usr#/sysroots/aarch64-llvm/usr#g'

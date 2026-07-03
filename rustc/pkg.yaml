@@ -1,0 +1,124 @@
+name: rustc
+variant: scratch
+# Bootstrap rust from the stagex amd64 rustc and (cross-)build the host rustc.
+# mrustc can't bootstrap rust on arm64, so the build is pinned to amd64 and the
+# arm64-host rustc is cross-built here (x.py --build x86_64 --host aarch64).
+buildPlatform: linux/amd64
+dependencies:
+  # Build-time tools. The build runs on amd64 (buildPlatform), and bldr resolves
+  # a cross build's dependencies at the build platform, so these come in as
+  # native amd64. (llvm is the multi-target X86;AArch64 build, so its clang can
+  # cross-compile to aarch64.)
+  - image: "{{ .TOOLS_IMAGE }}"
+  - image: "{{ .LLVM_IMAGE }}"
+  # stage0 bootstrap compiler: stagex's reproducibly-built amd64 rustc.
+  - image: "{{ .stagex_prefix }}/core-rust:{{ .stagex_version }}@sha256:{{ .stagex_rust_sha256 }}"
+    to: /bootstrap
+  # The stagex rustc/cargo are not self-contained: they dynamically link the
+  # LLVM C++ runtime (libc++/libc++abi/libunwind) and libzstd. Pull the stagex
+  # images that ship those to a non-loader path; prepare copies just the needed
+  # .so into the bootstrap's lib dir (resolved via its $ORIGIN/../lib rpath).
+  - image: "{{ .stagex_prefix }}/core-llvm:{{ .stagex_version }}@sha256:{{ .stagex_llvm_sha256 }}"
+    to: /runtime/llvm
+  - image: "{{ .stagex_prefix }}/core-llvm21:{{ .stagex_version }}@sha256:{{ .stagex_llvm21_sha256 }}"
+    to: /runtime/llvm21
+  - image: "{{ .stagex_prefix }}/core-libzstd:{{ .stagex_version }}@sha256:{{ .stagex_libzstd_sha256 }}"
+    to: /runtime/libzstd
+  # arm64 cross inputs (used only when the target platform is arm64; the build
+  # itself always runs on amd64 via buildPlatform). aarch64 musl sysroot for
+  # cross-linking, and the aarch64 LLVM to link the arm64-host rustc against
+  # (its llvm-config runs under buildx qemu).
+  - image: "{{ .TOOLCHAIN_IMAGE }}"
+    platform: linux/arm64
+    to: /sysroots/aarch64
+  # arm64 tools merged into the sysroot too: cargo's openssl-sys links the target
+  # openssl, so the aarch64 sysroot needs aarch64 libssl/libcrypto (+ headers).
+  # curl/libz/libgit2/sqlite3 are vendored by cargo, so openssl is the one that
+  # needs a real target lib rather than the amd64 /usr one.
+  - image: "{{ .TOOLS_IMAGE }}"
+    platform: linux/arm64
+    to: /sysroots/aarch64
+  - image: "{{ .LLVM_IMAGE }}"
+    platform: linux/arm64
+    to: /sysroots/aarch64-llvm
+steps:
+  - sources:
+      - url: https://static.rust-lang.org/dist/rustc-{{ .rust_version }}-src.tar.gz
+        destination: rustc-src.tar.gz
+        sha256: "{{ .rust_sha256 }}"
+        sha512: "{{ .rust_sha512 }}"
+    prepare:
+      - |
+        mkdir -p rust
+        tar -xf rustc-src.tar.gz -C rust --strip-components=1
+
+        # Make the stage0 bootstrap compiler self-contained: drop the LLVM C++
+        # runtime + libzstd it links next to its binaries (its rpath is
+        # $ORIGIN/../lib). libz/libssl come from tools-zlib-ng/tools-openssl.
+        cp -a /runtime/llvm/usr/lib/libc++.so.1* /bootstrap/usr/lib/
+        cp -a /runtime/llvm/usr/lib/libc++abi.so.1* /bootstrap/usr/lib/
+        cp -a /runtime/llvm21/usr/lib/llvm21/lib/libunwind.so.1* /bootstrap/usr/lib/
+        cp -a /runtime/libzstd/usr/lib/libzstd.so.1* /bootstrap/usr/lib/
+
+        # stagex's std was built with --llvm-libunwind=system, so every binary
+        # the stage0 links pulls in `-lunwind`; put libunwind.so (+ soname) on
+        # the system linker path so ld resolves it. Our own std bundles libunwind
+        # (rust's musl default), so this only affects stage0-linked binaries.
+        cp -a /runtime/llvm21/usr/lib/llvm21/lib/libunwind.so* /usr/lib/
+
+        # stagex's rust install has a real `lib` dir with `lib64 -> lib`. rustc's
+        # find_libdir prefers `lib64` on 64-bit, so bootstrap's stage0-sysroot
+        # ends up with std in `lib` but an empty real `lib64` that rustc searches
+        # first ("can't find crate for core"). Drop the lib64 symlink so both the
+        # stage0 and bootstrap's sysroot use `lib`.
+        rm -f /bootstrap/usr/lib64
+
+        # Cross wrappers for the aarch64 host build (unused on amd64).
+        install -m0755 /pkg/aarch64-clang /usr/bin/aarch64-clang
+        install -m0755 /pkg/aarch64-clang++ /usr/bin/aarch64-clang++
+        install -m0755 /pkg/aarch64-llvm-config /usr/bin/aarch64-llvm-config
+
+        sh /pkg/gen-bootstrap-toml.sh > rust/bootstrap.toml
+        cat rust/bootstrap.toml
+    install:
+      - |
+        cd rust
+
+        # dynamically-linked musl (matches stagex), reuse system openssl/llvm.
+        export RUSTFLAGS="-C target-feature=-crt-static"
+        export CARGO_NET_OFFLINE=true
+        export LD_LIBRARY_PATH=/bootstrap/usr/lib
+
+        # cargo's openssl-sys links the system openssl per target. Use
+        # target-scoped OPENSSL_DIRs so the aarch64 link picks the aarch64 openssl
+        # from the sysroot (not the amd64 /usr one, which would add -L/usr/lib and
+        # shadow the sysroot with incompatible amd64 libs).
+        export OPENSSL_NO_VENDOR=1
+        export X86_64_UNKNOWN_LINUX_MUSL_OPENSSL_DIR=/usr
+        export AARCH64_UNKNOWN_LINUX_MUSL_OPENSSL_DIR=/sysroots/aarch64/usr
+
+        # Always stage2. For the aarch64 cross-host build this matters: the
+        # aarch64 compiler must be built by the stage1 *x86_64* compiler (which
+        # also builds the aarch64 std, so it can find it), not by stage0 (the
+        # stagex bootstrap, which only has x86_64 std). stage1 runs on amd64 and
+        # cross-compiles rustc to aarch64 — no aarch64 binary is executed here.
+        # x.py install builds then installs, so a single invocation covers both.
+        DESTDIR=/rootfs python3 x.py install --stage 2
+    test:
+      - |
+        # Verify the produced rustc targets the requested arch via the ELF header
+        # (e_machine at offset 18: 0x3e=x86-64, 0xb7=aarch64). The arm64 rustc is
+        # cross-built and can't run on the amd64 worker, so only exec it natively.
+        python3 - <<PY
+        import sys
+        want = b'\xb7\x00' if "$ARCH" == "aarch64" else b'\x3e\x00'
+        data = open('/rootfs/usr/bin/rustc', 'rb').read(20)
+        print('rustc e_machine', data[18:20].hex(), 'arch', "$ARCH")
+        sys.exit(0 if data[18:20] == want else 1)
+        PY
+        if [ "${ARCH}" != "aarch64" ]; then
+          /rootfs/usr/bin/rustc --version
+        fi
+finalize:
+  - from: /rootfs
+    to: /

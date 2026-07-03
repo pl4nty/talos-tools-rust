@@ -1,0 +1,8 @@
+name: reproducibility
+variant: scratch
+buildPlatform: linux/amd64
+dependencies:
+  - stage: rustc
+finalize:
+  - from: /
+    to: /

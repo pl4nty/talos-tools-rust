@@ -1,0 +1,7 @@
+---
+kind: pkgfile.Build
+spec:
+  targets:
+    - rustc
+  reproducibleTargetName: reproducibility
+  disableCrossBuilder: true

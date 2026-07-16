@@ -5,9 +5,9 @@
 format: v1alpha2
 
 vars:
-  TOOLCHAIN_IMAGE: ghcr.io/siderolabs/toolchain:v1.14.0-alpha.0-12-g4012a7d
-  TOOLS_IMAGE: ghcr.io/siderolabs/tools:v1.14.0-alpha.0-19-g5326524
-  LLVM_IMAGE: ghcr.io/siderolabs/llvm:v1.14.0-alpha.0-19-g5326524
+  TOOLCHAIN_IMAGE: ghcr.io/siderolabs/toolchain:v1.14.0-alpha.0-14-gef85c3f
+  TOOLS_IMAGE: ghcr.io/siderolabs/tools:v1.14.0-alpha.0-25-g2723c06
+  LLVM_IMAGE: ghcr.io/siderolabs/llvm:v1.14.0-alpha.0-25-g2723c06
 
   # renovate: datasource=github-tags depName=rust-lang/rust
   rust_version: 1.96.1

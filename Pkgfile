@@ -1,13 +1,13 @@
-# syntax = ghcr.io/siderolabs/bldr:v0.6.1
+# syntax = ghcr.io/siderolabs/bldr:v0.6.2
 
 # Sync bldr image with Makefile
 
 format: v1alpha2
 
 vars:
-  TOOLCHAIN_IMAGE: ghcr.io/siderolabs/toolchain:v1.14.0-alpha.0-14-gef85c3f
-  TOOLS_IMAGE: ghcr.io/siderolabs/tools:v1.14.0-alpha.0-26-g08071b1
-  LLVM_IMAGE: ghcr.io/siderolabs/llvm:v1.14.0-alpha.0-26-g08071b1
+  TOOLCHAIN_IMAGE: ghcr.io/siderolabs/toolchain:v1.14.0
+  TOOLS_IMAGE: ghcr.io/siderolabs/tools:v1.14.0
+  LLVM_IMAGE: ghcr.io/siderolabs/llvm:v1.14.0
 
   # renovate: datasource=github-tags depName=rust-lang/rust
   rust_version: 1.96.1

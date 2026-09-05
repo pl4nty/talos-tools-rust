@@ -1,0 +1,31 @@
+#!/bin/sh
+# riscv64 llvm-config shim.
+#
+# Cross-building the riscv64-host rustc happens on amd64, but rust's build wants to
+# run the riscv64 target's llvm-config — a riscv64 binary that can't execute on
+# the amd64 worker, so we run the native amd64 llvm-config instead and rewrite its
+# /usr install prefix to where the riscv64 LLVM is mounted, and report the
+# riscv64 host triple. This avoids executing any riscv64 binary.
+set -eu
+
+# The host LLVM has every backend, the riscv64 one only RISCV, so the backend
+# lists are answered here rather than passed through: rustc_llvm keys its
+# LLVMInitialize*Target calls off --components.
+for arg in "$@"; do
+	case "$arg" in
+		--host-target) echo "riscv64-unknown-linux-musl"; exit 0 ;;
+		--targets-built) echo "RISCV"; exit 0 ;;
+		--components)
+			/usr/bin/llvm-config --components | tr ' ' '\n' \
+				| grep -vE '^(aarch64|amdgpu|arc|arm|avr|bpf|csky|directx|hexagon|lanai|loongarch|m68k|mips|msp430|nvptx|powerpc|riscv|sparc|spirv|systemz|ve|webassembly|x86|xcore|xtensa)' \
+				| tr '\n' ' '
+			echo "riscv riscvasmparser riscvcodegen riscvdesc riscvdisassembler riscvinfo riscvtargetmca"
+			exit 0
+			;;
+	esac
+done
+
+# The host LLVM is a libc++ build, the riscv64 one links GCC's libstdc++, and
+# rustc_llvm picks the C++ runtime to link from --cxxflags.
+/usr/bin/llvm-config "$@" \
+	| sed -e 's#/usr#/sysroots/riscv64-llvm/usr#g' -e 's/-stdlib=libc++//g'

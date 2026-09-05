@@ -1,0 +1,16 @@
+#!/bin/sh
+# Cross C compiler wrapper: drive the multi-target clang (all backends) to emit
+# and link riscv64 against the riscv64 musl sysroot, using lld.
+#
+# The host clang is the stagex build, which defaults to compiler-rt + libunwind;
+# neither exists for riscv64, so point it at the sysroot's GCC runtime instead.
+set -eu
+GCC_INSTALL_DIR=$(ls -d /sysroots/riscv64/usr/lib/gcc/*/*/ | tail -n1)
+exec clang \
+	--target=riscv64-unknown-linux-musl \
+	--sysroot=/sysroots/riscv64 \
+	--gcc-install-dir="${GCC_INSTALL_DIR}" \
+	-rtlib=libgcc \
+	--unwindlib=libgcc \
+	-fuse-ld=lld \
+	"$@"

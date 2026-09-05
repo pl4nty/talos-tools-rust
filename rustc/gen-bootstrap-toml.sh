@@ -9,7 +9,7 @@ set -eu
 
 BUILD_ARCH="${BUILD%%-*}"                       # x86_64 (build platform)
 RUST_BUILD="${BUILD_ARCH}-unknown-linux-musl"
-RUST_TARGET="${ARCH}-unknown-linux-musl"        # target
+RUST_TARGET="$(echo "${ARCH}" | sed s/^riscv64$/riscv64gc/)-unknown-linux-musl"
 
 cat <<EOF
 [build]
@@ -57,20 +57,20 @@ musl-root = "/usr"
 crt-static = false
 EOF
 
-if [ "${ARCH}" = "aarch64" ]; then
+if [ "${ARCH}" = "riscv64" ]; then
 	# Cross target: aarch64 host, linked against the prebuilt arm64 libLLVM (its
 	# llvm-config runs under buildx qemu), compiled/linked with the multi-target
 	# clang via wrappers that add --target/--sysroot.
 	cat <<EOF
 
-[target.aarch64-unknown-linux-musl]
-llvm-config = "/usr/bin/aarch64-llvm-config"
-cc = "/usr/bin/aarch64-clang"
-cxx = "/usr/bin/aarch64-clang++"
+[target.riscv64gc-unknown-linux-musl]
+llvm-config = "/usr/bin/riscv64-llvm-config"
+cc = "/usr/bin/riscv64-clang"
+cxx = "/usr/bin/riscv64-clang++"
 ar = "llvm-ar"
 ranlib = "llvm-ranlib"
-linker = "/usr/bin/aarch64-clang"
-musl-root = "/sysroots/aarch64/usr"
+linker = "/usr/bin/riscv64-clang"
+musl-root = "/sysroots/riscv64/usr"
 crt-static = false
 EOF
 fi

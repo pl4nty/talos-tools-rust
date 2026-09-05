@@ -9,8 +9,8 @@ dependencies:
   # a cross build's dependencies at the build platform, so these come in as
   # native amd64. (llvm is the multi-target X86;AArch64 build, so its clang can
   # cross-compile to aarch64.)
-  - image: "{{ .TOOLS_IMAGE }}"
-  - image: "{{ .LLVM_IMAGE }}"
+  - image: "{{ .HOST_TOOLS_IMAGE }}"
+  - image: "{{ .stagex_prefix }}/core-llvm:{{ .stagex_version }}@sha256:{{ .stagex_llvm_sha256 }}"
   # stage0 bootstrap compiler: stagex's reproducibly-built amd64 rustc.
   - image: "{{ .stagex_prefix }}/core-rust:{{ .stagex_version }}@sha256:{{ .stagex_rust_sha256 }}"
     to: /bootstrap
@@ -29,18 +29,18 @@ dependencies:
   # cross-linking, and the aarch64 LLVM to link the arm64-host rustc against
   # (its llvm-config runs under buildx qemu).
   - image: "{{ .TOOLCHAIN_IMAGE }}"
-    platform: linux/arm64
-    to: /sysroots/aarch64
+    platform: linux/riscv64
+    to: /sysroots/riscv64
   # arm64 tools merged into the sysroot too: cargo's openssl-sys links the target
   # openssl, so the aarch64 sysroot needs aarch64 libssl/libcrypto (+ headers).
   # curl/libz/libgit2/sqlite3 are vendored by cargo, so openssl is the one that
   # needs a real target lib rather than the amd64 /usr one.
   - image: "{{ .TOOLS_IMAGE }}"
-    platform: linux/arm64
-    to: /sysroots/aarch64
+    platform: linux/riscv64
+    to: /sysroots/riscv64
   - image: "{{ .LLVM_IMAGE }}"
-    platform: linux/arm64
-    to: /sysroots/aarch64-llvm
+    platform: linux/riscv64
+    to: /sysroots/riscv64-llvm
 steps:
   - sources:
       - url: https://static.rust-lang.org/dist/rustc-{{ .rust_version }}-src.tar.gz
@@ -73,10 +73,17 @@ steps:
         # stage0 and bootstrap's sysroot use `lib`.
         rm -f /bootstrap/usr/lib64
 
+        # The sysroot's libc.so is an absolute symlink to
+        # /usr/lib/ld-musl-riscv64.so.1, which does not resolve from the amd64
+        # build root, so `-lc` falls back to libc.a and links a second, static
+        # musl into every dynamic binary (two __init_libc runs, SIGSEGV before
+        # main). Re-point it inside the sysroot.
+        ln -sf ld-musl-riscv64.so.1 /sysroots/riscv64/usr/lib/libc.so
+
         # Cross wrappers for the aarch64 host build (unused on amd64).
-        install -m0755 /pkg/aarch64-clang /usr/bin/aarch64-clang
-        install -m0755 /pkg/aarch64-clang++ /usr/bin/aarch64-clang++
-        install -m0755 /pkg/aarch64-llvm-config /usr/bin/aarch64-llvm-config
+        install -m0755 /pkg/riscv64-clang /usr/bin/riscv64-clang
+        install -m0755 /pkg/riscv64-clang++ /usr/bin/riscv64-clang++
+        install -m0755 /pkg/riscv64-llvm-config /usr/bin/riscv64-llvm-config
 
         sh /pkg/gen-bootstrap-toml.sh > rust/bootstrap.toml
         cat rust/bootstrap.toml
@@ -95,7 +102,7 @@ steps:
         # shadow the sysroot with incompatible amd64 libs).
         export OPENSSL_NO_VENDOR=1
         export X86_64_UNKNOWN_LINUX_MUSL_OPENSSL_DIR=/usr
-        export AARCH64_UNKNOWN_LINUX_MUSL_OPENSSL_DIR=/sysroots/aarch64/usr
+        export RISCV64GC_UNKNOWN_LINUX_MUSL_OPENSSL_DIR=/sysroots/riscv64/usr
 
         # Always stage2. For the aarch64 cross-host build this matters: the
         # aarch64 compiler must be built by the stage1 *x86_64* compiler (which
@@ -111,12 +118,12 @@ steps:
         # cross-built and can't run on the amd64 worker, so only exec it natively.
         python3 - <<PY
         import sys
-        want = b'\xb7\x00' if "$ARCH" == "aarch64" else b'\x3e\x00'
+        want = b'\xf3\x00' if "$ARCH" == "riscv64" else b'\x3e\x00'
         data = open('/rootfs/usr/bin/rustc', 'rb').read(20)
         print('rustc e_machine', data[18:20].hex(), 'arch', "$ARCH")
         sys.exit(0 if data[18:20] == want else 1)
         PY
-        if [ "${ARCH}" != "aarch64" ]; then
+        if [ "${ARCH}" != "riscv64" ]; then
           /rootfs/usr/bin/rustc --version
         fi
 finalize:

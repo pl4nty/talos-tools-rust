@@ -16,8 +16,9 @@ vars:
   rust_sha512: 71813f2ee84087a197ca648f16a588b5c6727752a0d42547991ac9504301e2e14a1fa5b42102a01e3c67884fee6773ad855ac4a77e9f0d0e1e22b18cd0748cc0
 
   # Stage(x) reproducibly built bootstrap toolchain. Please update when necessary to build newer toolchain
-  stagex_prefix: ghcr.io/siderolabs/stagex
-  stagex_version: 2026.06.0
+  stagex_prefix: ghcr.io/pl4nty/stagex
+  stagex_version: 2026.09.0
+  # TODO: refresh the stagex_*_sha256 digests below from the pl4nty/talos-stagex 2026.09.0 build
   stagex_rust_sha256: f1fbd09e2132ce721fe4459320ee01e9050eff4f0feec8bdd307f4009e3ff78c
   stagex_llvm_sha256: 919f0f459d3c9c5d85b7a45524d9fa056976ea8026441edc6419342a1f6a9ef1
   stagex_llvm21_sha256: 5bae8a803b18c6d8c8e60a4c3760bfc4d3fc8bbab59e048d3d6400a8179a3b70
